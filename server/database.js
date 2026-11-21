@@ -67,7 +67,7 @@ function seedDatabase(forceReset = false) {
   try {
     db.prepare(
       'INSERT INTO settings (id, business_name, upi_id, current_cash_balance, safety_buffer) VALUES (1, ?, ?, ?, ?)'
-    ).run('Aarav Design Studio', 'aaravstudio@upi', 85000, 25000);
+    ).run('My Workspace', 'sololedger@upi', 85000, 25000);
 
     const insertClient = db.prepare('INSERT INTO clients (name, email, phone) VALUES (?, ?, ?)');
     const clients = [
@@ -120,6 +120,10 @@ function seedDatabase(forceReset = false) {
     throw err;
   }
 }
+
+// One-time migration: rename the legacy seeded business name and UPI id in existing databases.
+db.exec(`UPDATE settings SET business_name = 'My Workspace' WHERE business_name = 'Aarav Design Studio';`);
+db.exec(`UPDATE settings SET upi_id = 'sololedger@upi' WHERE upi_id = 'aaravstudio@upi';`);
 
 seedDatabase();
 
