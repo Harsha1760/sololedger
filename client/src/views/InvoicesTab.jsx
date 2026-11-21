@@ -13,8 +13,9 @@ const FILTERS = [
   { id: 'paid', label: 'Paid' },
 ]
 
-function matchesFilter(invoice, filter) {
-  if (filter === 'overdue') return invoice.status === 'overdue'
+function matchesFilter(invoice, filter, today) {
+  if (filter === 'overdue')
+    return invoice.status === 'overdue' || (invoice.status === 'sent' && !!invoice.due_date && invoice.due_date < today)
   if (filter === 'unpaid') return invoice.status === 'sent' || invoice.status === 'overdue'
   if (filter === 'paid') return invoice.status === 'paid'
   return true
@@ -61,10 +62,10 @@ export default function InvoicesTab({ refreshKey, onChanged, onChase, openChase,
 
   const chase = onChase || openChase
   const today = todayYMD()
-  const counts = Object.fromEntries(FILTERS.map((f) => [f.id, invoices.filter((i) => matchesFilter(i, f.id)).length]))
+  const counts = Object.fromEntries(FILTERS.map((f) => [f.id, invoices.filter((i) => matchesFilter(i, f.id, today)).length]))
   const needle = query.trim().toLowerCase()
   const rows = invoices
-    .filter((i) => matchesFilter(i, filter))
+    .filter((i) => matchesFilter(i, filter, today))
     .filter((i) => !needle || [i.client_name, i.title].some((v) => String(v || '').toLowerCase().includes(needle)))
     .map((i) => ({
       ...i,

@@ -65,7 +65,7 @@ app.get('/api/dashboard', wrap((req, res) => {
   ).get();
   const overdue = db.prepare(`
     SELECT COUNT(*) AS overdueCount, COALESCE(SUM(amount), 0) AS overdueAmount
-    FROM invoices WHERE status = 'overdue'`).get();
+    FROM invoices WHERE status = 'overdue' OR (status = 'sent' AND due_date < ?)`).get(today());
   const bills = db.prepare(`
     SELECT COUNT(*) AS unpaidBillsCount, COALESCE(SUM(amount), 0) AS unpaidBillsAmount
     FROM bills WHERE is_paid = 0`).get();

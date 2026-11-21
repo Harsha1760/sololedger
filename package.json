@@ -2,7 +2,7 @@
   "name": "sololedger",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=22.0.0" },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "build": "npm --prefix server install && npm --prefix client install && npm --prefix client run build",
     "start": "node server/index.js"
