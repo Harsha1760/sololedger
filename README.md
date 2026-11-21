@@ -4,13 +4,13 @@ SoloLedger is a cash-flow workspace for Apex Studios, a boutique brand and desig
 
 ## Key features
 
-- **20-Second Quick Invoice**: WhatsApp chat parser and UPI QR code
-- **Realistic history-adjusted cash forecast**
-- **What-If delay simulator**
-- **Bad Day rescue mode**
-- **Customers reliability profiles**
-- **Split-screen chase stage**
-- **Obsidian dark and cool-slate light themes**
+- **20-Second Quick Invoice**: Paste a WhatsApp message to parse invoice details, then generate a UPI QR code
+- **Realistic History-Adjusted Cash Forecast**
+- **What-If Delay Simulator**
+- **Bad Day Rescue Mode**
+- **Customer Reliability Profiles**
+- **Split-Screen Chase Stage**
+- **Obsidian Dark and Cool-Slate Light Themes**
 
 ## Tech stack
 
