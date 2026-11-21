@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Receipt, Search } from 'lucide-react'
 import { Button, Card, EmptyState, ErrorBanner, StatusBadge, inputClass } from '../components/ui'
 import NewInvoiceModal from '../components/NewInvoiceModal'
+import PaidStamp from '../components/PaidStamp'
 import { getInvoices, setInvoiceStatus } from '../lib/api'
 import { daysBetween, formatDate, formatINR, todayYMD } from '../lib/format'
 
@@ -28,7 +29,7 @@ function initialsOf(name) {
     .join('')
 }
 
-export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify }) {
+export default function InvoicesTab({ refreshKey, onChanged, onChase, openChase, onNotify }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +37,7 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [busyId, setBusyId] = useState(null)
+  const [stampId, setStampId] = useState(null)
 
   useEffect(() => {
     let ignore = false
@@ -57,6 +59,7 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
     }
   }, [refreshKey])
 
+  const chase = onChase || openChase
   const today = todayYMD()
   const counts = Object.fromEntries(FILTERS.map((f) => [f.id, invoices.filter((i) => matchesFilter(i, f.id)).length]))
   const needle = query.trim().toLowerCase()
@@ -78,8 +81,9 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
     setError('')
     try {
       await setInvoiceStatus(invoice.id, 'paid')
-      await onChanged()
+      setStampId(invoice.id)
       onNotify?.('Marked paid — cash balance updated')
+      await onChanged?.()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -192,7 +196,12 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
                         <span className="font-medium text-slate-900">{inv.client_name || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{inv.title}</td>
+                    <td className="px-5 py-3">
+                      <div className="relative inline-block">
+                        <span className="text-slate-600">{inv.title}</span>
+                        <PaidStamp show={stampId === inv.id} onDone={() => setStampId(null)} />
+                      </div>
+                    </td>
                     <td className="money tabular-nums px-5 py-3 text-right text-slate-900">{formatINR(inv.amount)}</td>
                     <td className="px-5 py-3 text-slate-600">{formatDate(inv.due_date)}</td>
                     <td className="px-5 py-3 text-right">
@@ -212,7 +221,7 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-2">
-                        <Button variant="secondary" size="sm" onClick={() => openChase(inv)}>
+                        <Button variant="secondary" size="sm" onClick={() => chase?.(inv)}>
                           Chase
                         </Button>
                         {inv.status !== 'paid' && (
@@ -239,7 +248,7 @@ export default function InvoicesTab({ refreshKey, onChanged, openChase, onNotify
         <NewInvoiceModal
           onClose={() => setShowNew(false)}
           onCreated={() => {
-            onChanged()
+            onChanged?.()
             onNotify?.('Invoice created')
           }}
         />

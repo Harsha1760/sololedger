@@ -1,9 +1,15 @@
 'use strict';
 // SoloLedger Express API server.
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const { db, seedDatabase } = require('./database');
-const { calculateCashForecast } = require('./services/forecastService');
+const {
+  calculateCashForecast,
+  paymentHistoryByClient,
+  daysBetween,
+  localYmdOf,
+} = require('./services/forecastService');
 const { generateAlerts } = require('./services/alertService');
 
 const app = express();
@@ -73,6 +79,68 @@ app.get('/api/dashboard', wrap((req, res) => {
 
 app.get('/api/clients', wrap((req, res) => {
   res.json(db.prepare('SELECT * FROM clients ORDER BY id').all());
+}));
+
+// Per-client profile: billing totals, overdue exposure, payment reliability and invoice history.
+app.get('/api/customers', wrap((req, res) => {
+  const clients = db.prepare('SELECT * FROM clients ORDER BY id').all();
+  const invoices = db.prepare(`
+    SELECT i.*, c.name AS client_name
+    FROM invoices i
+    LEFT JOIN clients c ON c.id = i.client_id
+    ORDER BY i.due_date DESC, i.id DESC`).all();
+  const history = paymentHistoryByClient(db);
+  const todayYmd = today();
+
+  const byClient = new Map();
+  for (const inv of invoices) {
+    // days_late: paid -> paid date minus due date; unpaid -> today minus due date (positive = late).
+    let daysLate = null;
+    if (inv.status === 'paid') {
+      if (inv.paid_at) daysLate = daysBetween(inv.due_date, localYmdOf(inv.paid_at));
+    } else {
+      daysLate = daysBetween(inv.due_date, todayYmd);
+    }
+    const item = {
+      id: inv.id,
+      title: inv.title,
+      amount: inv.amount,
+      issue_date: inv.issue_date,
+      due_date: inv.due_date,
+      status: inv.status,
+      paid_at: inv.paid_at,
+      last_chased_at: inv.last_chased_at,
+      client_name: inv.client_name,
+      days_late: daysLate,
+    };
+    if (!byClient.has(inv.client_id)) byClient.set(inv.client_id, []);
+    byClient.get(inv.client_id).push(item);
+  }
+
+  res.json(clients.map((c) => {
+    const list = byClient.get(c.id) || [];
+    const hist = history.get(c.id) || { paidCount: 0, avgLateDays: 0 };
+    const sum = (items) => items.reduce((acc, i) => acc + Number(i.amount), 0);
+    const overdue = list.filter((i) => i.status === 'overdue');
+    let reliability_label = 'Pays on time';
+    if (hist.paidCount === 0) reliability_label = 'New client';
+    else if (hist.avgLateDays >= 7) reliability_label = `Usually ${hist.avgLateDays}d late`;
+
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      invoice_count: list.length,
+      total_billed: sum(list),
+      open_amount: sum(list.filter((i) => i.status !== 'paid')),
+      overdue_amount: sum(overdue),
+      overdue_count: overdue.length,
+      avg_late_days: hist.avgLateDays,
+      reliability_label,
+      invoices: list,
+    };
+  }));
 }));
 
 app.post('/api/clients', wrap((req, res) => {
@@ -225,7 +293,8 @@ app.get('/api/forecast', wrap((req, res) => {
   const delayInvoiceId = req.query.delayInvoiceId;
   const delayDays = Number(req.query.delayDays) || 0;
   const whatIf = delayInvoiceId ? { invoiceId: Number(delayInvoiceId), delayDays } : null;
-  res.json(calculateCashForecast(db, days, whatIf));
+  const realistic = ['1', 'true'].includes(String(req.query.realistic || '').toLowerCase());
+  res.json(calculateCashForecast(db, days, whatIf, { realistic }));
 }));
 
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -260,7 +329,15 @@ app.post('/api/reset', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-const PORT = 5000;
+// Serve the built client (client/dist) and fall back to index.html for SPA routes.
+const clientDist = path.join(__dirname, '../client/dist');
+app.use(express.static(clientDist));
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(clientDist, 'index.html'), (err) => { if (err) next(); });
+});
+
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`SoloLedger server running at http://localhost:${PORT}`);
 });

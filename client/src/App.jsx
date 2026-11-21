@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RotateCcw, Settings, Wallet } from 'lucide-react'
+import { Landmark, Moon, RotateCcw, Settings, Sun, Zap } from 'lucide-react'
 import { Button, ErrorBanner, Field, inputClass } from './components/ui'
 import Modal from './components/Modal'
+import NewInvoiceModal from './components/NewInvoiceModal'
 import FollowUpDrawer from './components/FollowUpDrawer'
 import OverviewTab from './views/OverviewTab'
+import CustomersTab from './views/CustomersTab'
 import InvoicesTab from './views/InvoicesTab'
 import CashForecastTab from './views/CashForecastTab'
 import BillsTab from './views/BillsTab'
 import { getDashboard, resetDemo, updateSettings } from './lib/api'
 
 const API_DOWN_MESSAGE = 'Cannot reach the API at /api — is the server running on port 5000?'
+const THEME_KEY = 'sololedger-theme'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'customers', label: 'Customers' },
   { id: 'invoices', label: 'Invoices' },
-  { id: 'forecast', label: 'Cash Forecast' },
+  { id: 'forecast', label: 'Forecast' },
   { id: 'bills', label: 'Bills' },
 ]
 
@@ -46,6 +50,8 @@ export default function App() {
   const [settingsForm, setSettingsForm] = useState({ cash: '', buffer: '' })
   const [settingsError, setSettingsError] = useState('')
   const [savingSettings, setSavingSettings] = useState(false)
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
+  const [isDark, setIsDark] = useState(true)
 
   // Re-fetches the dashboard and bumps refreshKey so child tabs reload their lists.
   const refresh = useCallback(async () => {
@@ -71,6 +77,21 @@ export default function App() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains('dark'))
+  }, [])
+
+  function toggleTheme() {
+    const next = !isDark
+    document.documentElement.classList.toggle('dark', next)
+    try {
+      localStorage.setItem(THEME_KEY, next ? 'dark' : 'light')
+    } catch (err) {
+      // Storage unavailable: the theme still applies for this session.
+    }
+    setIsDark(next)
+  }
 
   async function handleReset() {
     if (!window.confirm('Reset all demo data? This replaces every client, invoice and bill.')) return
@@ -158,7 +179,7 @@ export default function App() {
     )
   }
 
-  const businessName = dashboard.settings?.business_name
+  const businessName = dashboard.settings?.business_name || 'Apex Studios'
   const cashHealth = getCashHealth(dashboard.settings)
   const badgeCounts = {
     invoices: dashboard.totals?.overdueCount ?? 0,
@@ -167,30 +188,36 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900">
-              <Wallet className="h-4 w-4 text-white" aria-hidden="true" />
+              <Landmark className="h-4 w-4 text-white" aria-hidden="true" />
             </div>
-            <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-slate-900">SoloLedger</p>
-              <div className="flex min-w-0 items-center gap-2">
-                {businessName && <p className="truncate text-xs text-slate-500">{businessName}</p>}
-                {cashHealth && (
-                  <span
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cashHealth.className}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${cashHealth.dot}`} aria-hidden="true" />
-                    {cashHealth.label}
-                  </span>
-                )}
-              </div>
+              <p className="truncate text-xs text-slate-500">• {businessName}</p>
+              <p className="hidden text-xs text-slate-400 sm:block">Hyderabad</p>
+              {cashHealth && (
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cashHealth.className}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${cashHealth.dot}`} aria-hidden="true" />
+                  {cashHealth.label}
+                </span>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" onClick={() => setNewInvoiceOpen(true)}>
+              <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+              + 20s Invoice
+            </Button>
             <Button variant="ghost" size="sm" onClick={openSettings} aria-label="Workspace settings">
               <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={toggleTheme} aria-label="Toggle theme">
+              {isDark ? <Moon className="h-3.5 w-3.5" aria-hidden="true" /> : <Sun className="h-3.5 w-3.5" aria-hidden="true" />}
             </Button>
             <Button variant="ghost" size="sm" onClick={handleReset} disabled={resetting}>
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
@@ -211,7 +238,7 @@ export default function App() {
                   onClick={() => setActiveTab(tab.id)}
                   aria-current={active ? 'page' : undefined}
                   className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
-                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   {tab.label}
@@ -244,6 +271,16 @@ export default function App() {
             refreshKey={refreshKey}
             onChanged={refresh}
             openChase={setFollowUp}
+            onChase={setFollowUp}
+            onNavigate={setActiveTab}
+            onNotify={showToast}
+          />
+        )}
+        {activeTab === 'customers' && (
+          <CustomersTab
+            refreshKey={refreshKey}
+            onChanged={refresh}
+            onChase={setFollowUp}
             onNavigate={setActiveTab}
             onNotify={showToast}
           />
@@ -253,12 +290,28 @@ export default function App() {
             refreshKey={refreshKey}
             onChanged={refresh}
             openChase={setFollowUp}
+            onChase={setFollowUp}
+            onNavigate={setActiveTab}
             onNotify={showToast}
           />
         )}
-        {activeTab === 'forecast' && <CashForecastTab refreshKey={refreshKey} onNotify={showToast} />}
+        {activeTab === 'forecast' && (
+          <CashForecastTab
+            refreshKey={refreshKey}
+            onChanged={refresh}
+            onChase={setFollowUp}
+            onNavigate={setActiveTab}
+            onNotify={showToast}
+          />
+        )}
         {activeTab === 'bills' && (
-          <BillsTab refreshKey={refreshKey} onChanged={refresh} onNotify={showToast} />
+          <BillsTab
+            refreshKey={refreshKey}
+            onChanged={refresh}
+            onChase={setFollowUp}
+            onNavigate={setActiveTab}
+            onNotify={showToast}
+          />
         )}
       </main>
 
@@ -270,6 +323,10 @@ export default function App() {
           onChanged={refresh}
           onNotify={showToast}
         />
+      )}
+
+      {newInvoiceOpen && (
+        <NewInvoiceModal onClose={() => setNewInvoiceOpen(false)} onCreated={refresh} />
       )}
 
       <Modal

@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>client</title>
+    <script>
+      (function () {
+        var root = document.documentElement
+        var theme = null
+        try {
+          theme = localStorage.getItem('sololedger-theme')
+        } catch (e) {}
+        if (theme === 'light') root.classList.remove('dark')
+        else root.classList.add('dark')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

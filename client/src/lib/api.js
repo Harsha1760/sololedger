@@ -35,15 +35,17 @@ export const createBill = (payload) => api('/bills', { method: 'POST', body: pay
 export const payBill = (id) => api(`/bills/${id}/pay`, { method: 'PATCH' });
 export const updateSettings = (payload) => api('/settings', { method: 'PATCH', body: payload });
 
+// Forwards every param except undefined/null/false/'' (so realistic: true -> ?realistic=true).
 export function getForecast(params = {}) {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') qs.set(key, String(value));
+    if (value !== undefined && value !== null && value !== false && value !== '') qs.set(key, String(value));
   }
   const query = qs.toString();
   return api(`/forecast${query ? `?${query}` : ''}`);
 }
 
 export const getClients = () => api('/clients');
+export const getCustomers = () => api('/customers');
 export const createClient = (payload) => api('/clients', { method: 'POST', body: payload });
 export const resetDemo = () => api('/reset', { method: 'POST' });

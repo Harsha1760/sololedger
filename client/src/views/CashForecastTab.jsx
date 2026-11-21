@@ -18,8 +18,34 @@ import { formatDate, formatDateShort, formatINR } from '../lib/format'
 
 const HORIZONS = [30, 60, 90]
 const OPEN_STATUSES = ['sent', 'overdue']
+const LAKH_STEPS = [1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 5e7]
+const SMALL_STEPS = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4]
 
 const signedINR = (n) => `${n < 0 ? '-' : '+'}${formatINR(Math.abs(n))}`
+
+// Indian short forms: ₹1L, ₹2.5L, ₹1Cr; plain rupees below one lakh.
+function formatAxisINR(n) {
+  const abs = Math.abs(n)
+  const trim = (x) => String(Number(x.toFixed(1)))
+  if (abs >= 1e7) return `₹${trim(n / 1e7)}Cr`
+  if (abs >= 1e5) return `₹${trim(n / 1e5)}L`
+  return `₹${n}`
+}
+
+// Clean tick positions covering [min, max]; returns the ticks and the padded domain.
+function axisScale(min, max) {
+  const span = Math.max(max - min, 1)
+  const step =
+    span >= 1e5
+      ? LAKH_STEPS.find((s) => span / s <= 6) ?? 10 ** Math.ceil(Math.log10(span / 6))
+      : SMALL_STEPS.find((s) => span / s <= 5)
+  const start = Math.floor(min / step) * step
+  let end = Math.ceil(max / step) * step
+  if (end <= start) end = start + step
+  const ticks = []
+  for (let t = start; t <= end; t += step) ticks.push(t)
+  return { ticks, domain: [start, end] }
+}
 
 function minBalance(series) {
   return series.length ? series.reduce((m, p) => Math.min(m, p.balance), Infinity) : 0
@@ -34,14 +60,14 @@ function CashTooltip({ active, payload, label, buffer = 0 }) {
   const balance = Number(payload[0].payload.balance) || 0
   const margin = balance - buffer
   return (
-    <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg tabular-nums">
+    <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white shadow-lg money tabular-nums">
       <p className="font-medium text-slate-300">{formatDate(label)}</p>
       <div className="mt-1 flex items-center justify-between gap-4">
-        <span className="text-slate-400">Projected Balance</span>
+        <span className="text-slate-400">Projected balance</span>
         <span className="money tabular-nums">{formatINR(balance)}</span>
       </div>
       <div className="mt-0.5 flex items-center justify-between gap-4">
-        <span className="text-slate-400">Buffer Margin</span>
+        <span className="text-slate-400">Buffer margin</span>
         <span className={`money tabular-nums ${margin >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
           {signedINR(margin)}
         </span>
@@ -55,6 +81,7 @@ export default function CashForecastTab({ refreshKey }) {
   const [openInvoices, setOpenInvoices] = useState([])
   const [whatIfId, setWhatIfId] = useState('')
   const [delayDays, setDelayDays] = useState(7)
+  const [realistic, setRealistic] = useState(false)
   const [data, setData] = useState(null)
   const [baseData, setBaseData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -88,6 +115,11 @@ export default function CashForecastTab({ refreshKey }) {
           if (ignore) return
           setBaseData(base)
           setData(sim)
+        } else if (realistic) {
+          const [base, real] = await Promise.all([getForecast({ days }), getForecast({ days, realistic: 1 })])
+          if (ignore) return
+          setBaseData(base)
+          setData(real)
         } else {
           const res = await getForecast({ days })
           if (ignore) return
@@ -105,27 +137,29 @@ export default function CashForecastTab({ refreshKey }) {
       ignore = true
       clearTimeout(timer)
     }
-  }, [days, whatIfId, delayDays, refreshKey])
+  }, [days, whatIfId, delayDays, realistic, refreshKey])
 
   const buffer = data?.safetyBuffer ?? 0
   const primarySeries = data?.simulated ?? data?.baseline ?? []
-  const showCompare = Boolean(whatIfId && baseData && data?.simulated)
-  const baseSeries = showCompare ? baseData.baseline : []
-  const simSeries = showCompare ? data.simulated : []
+  const showImpact = Boolean(whatIfId && baseData && data?.simulated)
+  const overlay = Boolean(baseData && data)
+  const baseSeries = overlay ? baseData.baseline ?? [] : []
+  const simSeries = showImpact ? data.simulated : []
 
   const chartData = primarySeries.map((point, i) => ({
     date: point.date,
     balance: point.balance,
-    baseline: showCompare ? baseSeries[i]?.balance : undefined,
+    baseline: overlay ? baseSeries[i]?.balance : undefined,
   }))
 
-  const values = chartData.flatMap((p) => [p.balance, p.baseline]).filter((v) => typeof v === 'number')
-  values.push(buffer)
+  const values = [0, buffer, ...chartData.flatMap((p) => [p.balance, p.baseline])].filter(
+    (v) => typeof v === 'number' && Number.isFinite(v)
+  )
   const lo = Math.min(...values)
   const hi = Math.max(...values)
   const pad = Math.max((hi - lo) * 0.08, 1000)
-  const minY = lo - pad
-  const maxY = lo < 0 ? Math.max(hi + pad, 0) : hi + pad
+  const { ticks, domain } = axisScale(lo < 0 ? lo - pad : 0, hi + pad)
+  const [domainLo, domainHi] = domain
 
   const daysBelowBuffer = countBelow(primarySeries, buffer)
   const lowest = data?.lowestBalance ?? 0
@@ -139,6 +173,8 @@ export default function CashForecastTab({ refreshKey }) {
   const extraLabel = `${extraDays > 0 ? '+' : extraDays < 0 ? '-' : ''}${extraAbs} ${
     extraAbs === 1 ? 'day' : 'days'
   } below buffer`
+
+  const primaryLabel = showImpact ? 'Simulated balance' : realistic ? 'Realistic balance' : 'Projected balance'
 
   return (
     <div className="flex flex-col gap-4">
@@ -160,10 +196,33 @@ export default function CashForecastTab({ refreshKey }) {
             </button>
           ))}
         </div>
-        {loading && data && <span className="text-xs text-slate-500">Updating…</span>}
+        <div className="flex flex-wrap items-center gap-3">
+          {loading && data && <span className="text-xs text-slate-500">Updating…</span>}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={realistic}
+            onClick={() => setRealistic((v) => !v)}
+            className="inline-flex items-center gap-2 text-sm text-slate-700"
+          >
+            <span
+              aria-hidden="true"
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                realistic ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  realistic ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </span>
+            Show Realistic Forecast (History-Adjusted)
+          </button>
+        </div>
       </div>
 
-      {showCompare && (
+      {showImpact && (
         <Card className="rounded-xl border-slate-200 p-5 shadow-sm">
           <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
             <div className="flex items-center gap-3">
@@ -242,12 +301,12 @@ export default function CashForecastTab({ refreshKey }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span className="flex items-center gap-2">
             <span className="inline-block h-0.5 w-4 bg-emerald-600" aria-hidden="true" />
-            {showCompare ? 'Simulated balance' : 'Projected balance'}
+            {primaryLabel}
           </span>
-          {showCompare && (
+          {overlay && (
             <span className="flex items-center gap-2">
               <span className="inline-block h-0 w-4 border-t-2 border-dashed border-slate-500" aria-hidden="true" />
-              Baseline
+              {showImpact ? 'Baseline' : 'Unadjusted baseline'}
             </span>
           )}
         </div>
@@ -274,14 +333,21 @@ export default function CashForecastTab({ refreshKey }) {
                   stroke="#cbd5e1"
                 />
                 <YAxis
-                  domain={[minY, maxY]}
-                  tickFormatter={(v) => formatINR(v)}
-                  width={100}
+                  domain={[domainLo, domainHi]}
+                  ticks={ticks}
+                  tickFormatter={formatAxisINR}
+                  width={72}
                   tick={{ fill: '#64748b', fontSize: 12 }}
                   stroke="#cbd5e1"
                 />
-                <ReferenceArea y1={minY} y2={buffer} fill="#fef3c7" fillOpacity={0.6} />
-                {minY < 0 && <ReferenceArea y1={minY} y2={0} fill="#fff1f2" fillOpacity={1} />}
+                <ReferenceArea
+                  y1={domainLo}
+                  y2={buffer}
+                  fill="#fb7185"
+                  fillOpacity={0.12}
+                  label={{ value: 'Danger zone', position: 'insideBottomLeft', fill: '#be123c', fontSize: 11 }}
+                />
+                <ReferenceLine y={0} stroke="#94a3b8" />
                 <ReferenceLine
                   y={buffer}
                   stroke="#d97706"
@@ -292,13 +358,14 @@ export default function CashForecastTab({ refreshKey }) {
                 <Area
                   type="monotone"
                   dataKey="balance"
+                  name={primaryLabel}
                   stroke="#059669"
                   strokeWidth={2}
                   fill="url(#cashFill)"
                   dot={false}
                   isAnimationActive
                 />
-                {showCompare && (
+                {overlay && (
                   <Line
                     type="monotone"
                     dataKey="baseline"

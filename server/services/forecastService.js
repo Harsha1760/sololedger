@@ -66,13 +66,45 @@ function summarise(series, safetyBuffer) {
   };
 }
 
+// Local calendar date (YYYY-MM-DD) of a stored ISO timestamp.
+function localYmdOf(iso) {
+  return formatYMD(new Date(iso));
+}
+
+/**
+ * Per-client payment history from PAID invoices.
+ * Returns Map<clientId, { paidCount, avgLateDays }>. avgLateDays is the rounded mean of whole
+ * local days between due_date and the local paid_at date (0 when there is no paid history).
+ */
+function paymentHistoryByClient(db) {
+  const rows = db
+    .prepare("SELECT client_id, due_date, paid_at FROM invoices WHERE status = 'paid' AND paid_at IS NOT NULL")
+    .all();
+  const acc = new Map();
+  for (const r of rows) {
+    const late = daysBetween(r.due_date, localYmdOf(r.paid_at));
+    const entry = acc.get(r.client_id) || { paidCount: 0, total: 0 };
+    entry.paidCount += 1;
+    entry.total += late;
+    acc.set(r.client_id, entry);
+  }
+  const out = new Map();
+  for (const [clientId, e] of acc) {
+    out.set(clientId, { paidCount: e.paidCount, avgLateDays: Math.round(e.total / e.paidCount) });
+  }
+  return out;
+}
+
 /**
  * Cash forecast over `days` (30, 60 or 90; anything else becomes 90).
  * whatIf: { invoiceId, delayDays } shifts one unpaid invoice's expected date in the simulated run.
+ * options: { realistic } shifts every open invoice's due date later by its client's avgLateDays
+ * (from PAID history) before the overdue/past-due default; the what-if shift is applied after it.
  * Top-level lowest/dips values come from the simulated summary when it exists, else the baseline.
  */
-function calculateCashForecast(db, days = 90, whatIf = null) {
+function calculateCashForecast(db, days = 90, whatIf = null, options = {}) {
   if (![30, 60, 90].includes(days)) days = 90;
+  const realistic = Boolean(options && options.realistic);
 
   const today = formatYMD(new Date());
 
@@ -83,14 +115,19 @@ function calculateCashForecast(db, days = 90, whatIf = null) {
   const safetyBuffer = settings.safety_buffer;
 
   const invoices = db
-    .prepare("SELECT id, title, amount, due_date, status FROM invoices WHERE status IN ('sent', 'overdue')")
+    .prepare(
+      "SELECT id, client_id, title, amount, due_date, status FROM invoices WHERE status IN ('sent', 'overdue')"
+    )
     .all();
   const bills = db.prepare('SELECT id, name, amount, due_date FROM bills WHERE is_paid = 0').all();
+  const history = realistic ? paymentHistoryByClient(db) : null;
 
-  // Unshifted invoice inflows. Overdue or past-due invoices are expected in 5 days.
+  // Invoice inflows. Realistic mode shifts the due date by the client's average late days first.
+  // Overdue or past-due invoices are expected in 5 days.
   const invoiceEvents = invoices.map((inv) => {
-    const expected =
-      inv.status === 'overdue' || inv.due_date < today ? addDays(today, 5) : inv.due_date;
+    const shift = realistic ? (history.get(inv.client_id)?.avgLateDays ?? 0) : 0;
+    const dueDate = shift ? addDays(inv.due_date, shift) : inv.due_date;
+    const expected = inv.status === 'overdue' || dueDate < today ? addDays(today, 5) : dueDate;
     return { type: 'invoice', id: inv.id, label: inv.title, amount: inv.amount, expected, invoiceId: inv.id };
   });
 
@@ -142,4 +179,4 @@ function calculateCashForecast(db, days = 90, whatIf = null) {
   };
 }
 
-module.exports = { calculateCashForecast, daysBetween, addDays };
+module.exports = { calculateCashForecast, daysBetween, addDays, paymentHistoryByClient, localYmdOf };

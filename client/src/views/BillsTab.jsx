@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Receipt, Search } from 'lucide-react'
 import { Button, Card, EmptyState, ErrorBanner, Field, inputClass } from '../components/ui'
+import PaidStamp from '../components/PaidStamp'
 import { createBill, getBills, payBill } from '../lib/api'
 import { daysBetween, formatDate, formatINR, todayYMD } from '../lib/format'
 
@@ -47,6 +48,7 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
   const [formErrors, setFormErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState(null)
+  const [stampId, setStampId] = useState(null)
 
   useEffect(() => {
     let ignore = false
@@ -89,12 +91,13 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
     setError('')
     try {
       await payBill(bill.id)
-      await onChanged()
+      setStampId(bill.id)
       onNotify?.('Bill paid')
+      await onChanged?.()
     } catch (err) {
       if (err.status === 409) {
         setError('This bill is already marked as paid.')
-        await onChanged()
+        await onChanged?.()
       } else {
         setError(err.message)
       }
@@ -126,7 +129,7 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
       setFormErrors({})
       setShowForm(false)
       onNotify?.('Bill added')
-      await onChanged()
+      await onChanged?.()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -278,7 +281,7 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
                   return (
                     <tr key={bill.id} className="hover:bg-slate-50">
                       <td className="px-5 py-3">
-                        <div className="flex items-center gap-3">
+                        <div className="relative flex items-center gap-3">
                           <span
                             aria-hidden="true"
                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"
@@ -286,6 +289,7 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
                             <Receipt className="h-4 w-4" aria-hidden="true" />
                           </span>
                           <span className="font-medium text-slate-900">{bill.name}</span>
+                          <PaidStamp show={stampId === bill.id} onDone={() => setStampId(null)} />
                         </div>
                       </td>
                       <td className="money tabular-nums px-5 py-3 text-right text-slate-900">{formatINR(bill.amount)}</td>
@@ -304,7 +308,7 @@ export default function BillsTab({ refreshKey, onChanged, onNotify }) {
                           onClick={() => markPaid(bill)}
                           disabled={!!bill.is_paid || busyId === bill.id}
                         >
-                          Mark Paid
+                          Pay
                         </Button>
                       </td>
                     </tr>

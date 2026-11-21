@@ -53,6 +53,14 @@ function dateOffset(days) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// ISO timestamp for local 12:00 on the calendar day `offset` days from today.
+function localNoonIso(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setHours(12, 0, 0, 0);
+  return d.toISOString();
+}
+
 function seedDatabase(forceReset = false) {
   if (forceReset) {
     db.exec('DELETE FROM invoices;');
@@ -67,7 +75,7 @@ function seedDatabase(forceReset = false) {
   try {
     db.prepare(
       'INSERT INTO settings (id, business_name, upi_id, current_cash_balance, safety_buffer) VALUES (1, ?, ?, ?, ?)'
-    ).run('My Workspace', 'sololedger@upi', 85000, 25000);
+    ).run('Apex Studios', 'apexstudios@upi', 85000, 25000);
 
     const insertClient = db.prepare('INSERT INTO clients (name, email, phone) VALUES (?, ?, ?)');
     const clients = [
@@ -101,6 +109,36 @@ function seedDatabase(forceReset = false) {
       insertInvoice.run(clientIds[ci], title, amount, dateOffset(offset - 30), dateOffset(offset), status);
     }
 
+    // Historical PAID invoices: [clientIndex, title, amount, dueOffset, lateDays].
+    // paid_at = due date + lateDays (local noon). Paid seed rows do not touch the cash balance.
+    const paidHistory = [
+      [0, 'Past project - Q1', 98000, -120, 40],
+      [0, 'Past project - Q2', 76000, -80, 40],
+      [4, 'Past project - Q1', 64000, -120, 30],
+      [4, 'Past project - Q2', 52000, -80, 30],
+      [2, 'Past project - Q1', 41000, -120, 6],
+      [2, 'Past project - Q2', 37500, -80, 6],
+      [3, 'Past project - Q1', 22000, -120, 0],
+      [3, 'Past project - Q2', 19500, -80, 0],
+      [1, 'Past project - Q1', 30000, -120, 12],
+      [1, 'Past project - Q2', 27000, -80, 12],
+      [5, 'Past project - Q1', 48000, -120, -3],
+      [5, 'Past project - Q2', 42500, -80, -3],
+    ];
+    const insertPaid = db.prepare(
+      "INSERT INTO invoices (client_id, title, amount, issue_date, due_date, status, paid_at) VALUES (?, ?, ?, ?, ?, 'paid', ?)"
+    );
+    for (const [ci, title, amount, offset, late] of paidHistory) {
+      insertPaid.run(
+        clientIds[ci],
+        title,
+        amount,
+        dateOffset(offset - 30),
+        dateOffset(offset),
+        localNoonIso(offset + late)
+      );
+    }
+
     const insertBill = db.prepare('INSERT INTO bills (name, amount, due_date, is_paid) VALUES (?, ?, ?, 0)');
     const bills = [
       ['Office rent', 45000, 4],
@@ -121,9 +159,9 @@ function seedDatabase(forceReset = false) {
   }
 }
 
-// One-time migration: rename the legacy seeded business name and UPI id in existing databases.
-db.exec(`UPDATE settings SET business_name = 'My Workspace' WHERE business_name = 'Aarav Design Studio';`);
-db.exec(`UPDATE settings SET upi_id = 'sololedger@upi' WHERE upi_id = 'aaravstudio@upi';`);
+// One-time migrations: rename legacy seeded brand name and UPI id in existing databases.
+db.exec(`UPDATE settings SET business_name = 'Apex Studios' WHERE business_name IN ('Aarav Design Studio', 'My Workspace');`);
+db.exec(`UPDATE settings SET upi_id = 'apexstudios@upi' WHERE upi_id IN ('aaravstudio@upi', 'sololedger@upi');`);
 
 seedDatabase();
 
