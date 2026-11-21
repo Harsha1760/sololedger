@@ -33,6 +33,7 @@ export const chaseInvoice = (id) => api(`/invoices/${id}/chase`, { method: 'POST
 export const getBills = () => api('/bills');
 export const createBill = (payload) => api('/bills', { method: 'POST', body: payload });
 export const payBill = (id) => api(`/bills/${id}/pay`, { method: 'PATCH' });
+export const updateSettings = (payload) => api('/settings', { method: 'PATCH', body: payload });
 
 export function getForecast(params = {}) {
   const qs = new URLSearchParams();

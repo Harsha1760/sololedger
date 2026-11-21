@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Copy } from 'lucide-react'
 import Modal from './Modal'
 import { Button, ErrorBanner } from './ui'
 import { chaseInvoice } from '../lib/api'
@@ -11,8 +11,14 @@ const TONES = [
   { id: 'final', label: 'Final' },
 ]
 
+const TONE_ACTIVE = {
+  polite: 'bg-slate-900 text-white shadow-sm',
+  firm: 'bg-amber-600 text-white shadow-sm',
+  final: 'bg-rose-600 text-white shadow-sm',
+}
+
 // Fetches the chase drafts for one invoice on open, lets the user pick/edit one, and copies it.
-export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
+export default function FollowUpDrawer({ invoice, onClose, onChanged, onNotify }) {
   const [data, setData] = useState(null)
   const [tone, setTone] = useState('polite')
   const [text, setText] = useState('')
@@ -20,6 +26,7 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const startedFor = useRef(null)
+  const copyTimer = useRef(null)
 
   useEffect(() => {
     if (!invoice || startedFor.current === invoice.id) return
@@ -38,6 +45,8 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
       })
   }, [invoice, onChanged])
 
+  useEffect(() => () => clearTimeout(copyTimer.current), [])
+
   function pickTone(next) {
     setTone(next)
     setText(data.drafts[next])
@@ -48,13 +57,16 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      onNotify?.('Follow-up message copied')
+      clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(() => setCopied(false), 2000)
     } catch {
       setError('Could not copy to the clipboard. Select the text and copy it manually.')
     }
   }
 
   const title = `Follow up · ${invoice?.client_name || invoice?.title || 'Invoice'}`
+  const lastChased = data?.last_chased_at ?? invoice?.last_chased_at
 
   return (
     <Modal
@@ -68,7 +80,7 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
             Close
           </Button>
           <Button variant="primary" onClick={copy} disabled={!text}>
-            {copied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+            <Copy className="h-4 w-4" aria-hidden="true" />
             {copied ? 'Copied' : 'Copy message'}
           </Button>
         </>
@@ -79,11 +91,9 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
             <p className="font-medium text-slate-900">{invoice.title}</p>
             <p>
-              <span className="money">{formatINR(invoice.amount)}</span> · due {formatDate(invoice.due_date)}
+              <span className="money tabular-nums">{formatINR(invoice.amount)}</span> · due {formatDate(invoice.due_date)}
             </p>
-            {data?.last_chased_at && (
-              <p className="mt-1 text-xs text-slate-500">Last chased: {formatDate(data.last_chased_at)}</p>
-            )}
+            {lastChased && <p className="mt-1 text-xs text-slate-500">Last chased: {formatDate(lastChased)}</p>}
           </div>
         )}
 
@@ -94,21 +104,24 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
         ) : (
           data && (
             <>
-              <div role="tablist" aria-label="Message tone" className="flex gap-1 rounded-lg bg-slate-100 p-1">
-                {TONES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={tone === t.id}
-                    onClick={() => pickTone(t.id)}
-                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                      tone === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+              <div role="tablist" aria-label="Message tone" className="inline-flex gap-1 self-start rounded-full bg-slate-100 p-1">
+                {TONES.map((t) => {
+                  const active = tone === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => pickTone(t.id)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        active ? TONE_ACTIVE[t.id] : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  )
+                })}
               </div>
               <label htmlFor="follow-up-text" className="sr-only">
                 Message
@@ -121,7 +134,7 @@ export default function FollowUpDrawer({ invoice, onClose, onChanged }) {
                   setCopied(false)
                 }}
                 rows={12}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 font-sans text-sm leading-relaxed text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10"
               />
             </>
           )

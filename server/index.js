@@ -228,6 +228,33 @@ app.get('/api/forecast', wrap((req, res) => {
   res.json(calculateCashForecast(db, days, whatIf));
 }));
 
+const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+
+app.patch('/api/settings', wrap((req, res) => {
+  const { current_cash_balance, safety_buffer } = req.body || {};
+  const hasCash = current_cash_balance !== undefined;
+  const hasBuffer = safety_buffer !== undefined;
+  if (!hasCash && !hasBuffer) {
+    return res.status(400).json({ error: 'Provide current_cash_balance and/or safety_buffer' });
+  }
+  if (hasCash && !isFiniteNumber(current_cash_balance)) {
+    return res.status(400).json({ error: 'current_cash_balance must be a finite number' });
+  }
+  if (hasBuffer && !(isFiniteNumber(safety_buffer) && safety_buffer >= 0)) {
+    return res.status(400).json({ error: 'safety_buffer must be a finite number greater than or equal to 0' });
+  }
+  if (hasCash) {
+    db.prepare('UPDATE settings SET current_cash_balance = ? WHERE id = 1').run(current_cash_balance);
+  }
+  if (hasBuffer) {
+    db.prepare('UPDATE settings SET safety_buffer = ? WHERE id = 1').run(safety_buffer);
+  }
+  res.json(db.prepare(
+    'SELECT business_name, upi_id, current_cash_balance, safety_buffer FROM settings WHERE id = 1'
+  ).get());
+}));
+
+
 app.post('/api/reset', wrap((req, res) => {
   seedDatabase(true);
   res.json({ ok: true });
